@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>EchoPulse — Jogo por Ecolocalização</title>
+  <style>
+    :root {
+      --bg: #0b0e12;
+      --fg: #e8f1ff;
+      --accent: #7ae0ff;
+      --accent2: #8cffb5;
+      --muted: #a4b3c4;
+      --danger: #ff6b6b;
+      --card: #11161d;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu;
+      color: var(--fg); background: radial-gradient(1200px 800px at 70% -10%, #18202b 0%, var(--bg) 60%);
+      display: grid; place-items: center;
+    }
+    .shell {
+      width: min(1100px, 96vw); height: min(720px, 92vh);
+      background: linear-gradient(180deg, #0f141b 0%, #0a0e13 100%);
+      border: 1px solid #1e2631; border-radius: 18px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45), inset 0 0 80px rgba(122,224,255,.04);
+      display: grid; grid-template-columns: 320px 1fr; gap: 0;
+    }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: 100vh; width: 100vw; border-radius: 0; }
+    }
+    .panel {
+      background: linear-gradient(180deg, #0b1016 0%, #0a0f15 100%);
+      padding: 18px 18px 14px; border-right: 1px solid #14202c; position: relative;
+    }
+    @media (max-width: 900px) { .panel { border-right: none; border-bottom: 1px solid #14202c; } }
+
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: .4px; }
+    h1 span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+
+    .controls, .stats, .toggles { background: var(--card); border: 1px solid #17202a; border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+    .controls kbd { background: #0e151d; border: 1px solid #1b2836; border-bottom-color: #0a1118; padding: 3px 6px; border-radius: 6px; font-size: 12px; color: #d5e6ff; }
+    .controls p { margin: 8px 0; }
+
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+    .row strong { font-variant-numeric: tabular-nums; }
+
+    button.primary {
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid #1a2736;
+      background: linear-gradient(180deg, #142032 0%, #0f1a28 100%);
+      color: var(--fg); font-weight: 700; letter-spacing: .4px; cursor: pointer;
+      box-shadow: 0 6px 24px rgba(122,224,255,.12), inset 0 1px 0 rgba(255,255,255,.05);
+      transition: transform .06s ease, box-shadow .2s ease, background .2s ease;
+    }
+    button.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(122,224,255,.18); }
+
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #1a2736; background: #0f1a28; color: var(--accent2); font-weight: 700; }
+
+    canvas { width: 100%; height: 100%; display: block; background: radial-gradient(900px 600px at 50% 0%, #0a0e14 0%, #05070a 65%);
+      filter: drop-shadow(0 0 24px rgba(122,224,255,.06)); }
+
+    .hud { position: absolute; inset: 0; pointer-events: none; display: grid; grid-template-rows: auto 1fr auto; padding: 10px; }
+    .hud .top { display: flex; gap: 8px; }
+    .chip { pointer-events: auto; user-select: none; padding: 8px 10px; border-radius: 10px; background: rgba(20,30,42,.6); border: 1px solid rgba(40,58,78,.8); backdrop-filter: blur(6px); font-size: 13px; }
+    .chip .bar { display: inline-block; width: 110px; height: 8px; border-radius: 6px; background: #0c1420; border: 1px solid #1a2736; overflow: hidden; vertical-align: middle; margin: 0 6px; }
+    .chip .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; }
+
+    .centerPrompt { place-self: center; text-align: center; background: rgba(10,15,20,.55); border: 1px solid #1a2736; padding: 16px 18px; border-radius: 16px; backdrop-filter: blur(6px); }
+    .centerPrompt h2 { margin: 0 0 8px; letter-spacing: .6px; }
+    .centerPrompt p { margin: 0 0 12px; color: var(--muted); }
+    .centerPrompt .keys { display: inline-flex; gap: 6px; }
+
+    .tiny { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    .credit { position: absolute; bottom: 8px; right: 12px; font-size: 12px; color: #8aa0b8; }
+    a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <!-- Painel lateral -->
+    <aside class="panel">
+      <h1>Echo<span>Pulse</span></h1>
+      <div class="sub">Navegue por labirintos invisíveis usando <strong>ecolocalização</strong>. Emita pulsos para revelar o mundo por alguns segundos.</div>
+
+      <div class="controls">
+        <div class="row" style="margin-bottom:6px"><span class="badge">Como jogar</span></div>
+        <p>Movimento: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> ou setas. Toque/arraste no mobile.</p>
+        <p>Ecolocalização: clique/toque para emitir um <em>pulso</em>. Revela paredes/objetos por tempo limitado.</p>
+        <p>Objetivo: alcance o portal <span style="color:var(--accent2)">▲</span> com o menor <strong>tempo</strong> e <strong>pulsos</strong>.</p>
+        <p class="tiny">Dica: os pulsos recarregam. Usar menos é melhor — mas ficar no escuro é arriscado.</p>
+      </div>
+
+      <div class="stats">
+        <div class="row"><span>Nível</span><strong id="uiLevel">1</strong></div>
+        <div class="row"><span>Tempo</span><strong id="uiTime">0.0s</strong></div>
+        <div class="row"><span>Pulsos usados</span><strong id="uiPulses">0</strong></div>
+        <div class="row"><span>Melhor</span><strong id="uiBest">—</strong></div>
+      </div>
+
+      <div class="toggles">
+        <div class="row" style="margin-bottom:8px">
+          <label><input id="reduceMotion" type="checkbox"> Reduzir animações</label>
+          <span></span>
+        </div>
+        <div class="row">
+          <label><input id="toggleSound" type="checkbox"> Som do pulso</label>
+          <span></span>
+        </div>
+      </div>
+
+      <button class="primary" id="btnRestart">Reiniciar nível</button>
+      <div class="tiny">Gera um novo layout mantendo o nível atual.</div>
+
+      <div class="credit">Feito com ♥ em HTML5 Canvas</div>
+    </aside>
+
+    <!-- Área do jogo -->
+    <main style="position: relative;">
+      <canvas id="game"></canvas>
+      <div class="hud">
+        <div class="top">
+          <div class="chip">Pulsos <div class="bar"><span id="barPulse"></span></div><span id="txtPulse">0%</span></div>
+          <div class="chip">Visibilidade <div class="bar"><span id="barFade"></span></div><span id="txtFade">0%</span></div>
+          <div class="chip" id="chipMsg" style="display:none"></div>
+        </div>
+        <div class="centerPrompt" id="startPrompt">
+          <h2>↯ Clique para pingar o mundo</h2>
+          <p>Revele o mapa e encontre o portal. Evite bater nas paredes!</p>
+          <div class="keys"><kbd>WASD</kbd> <kbd>←↑→↓</kbd> <kbd>Mouse</kbd></div>
+        </div>
+        <div style="height: 0"></div>
+      </div>
+    </main>
+  </div>
+
+  <audio id="pingSfx" preload="auto">
+    <source src="data:audio/wav;base64,UklGRpADAABXQVZFZm10IBIAAAABAAEAESsAACJWAAACABYAZGF0YRACAACAgICWlpaYmJiDg4OSkpKRkZGAgICGhoabm5u6enp+vr6////9/f3+fn5+Pj4+fn5+vr6+Pj4+fn5+Pj4+Pj4+Pj4+fn5+Pj4+Pj4+Pj4+Pj4+Pj4+fn5+Pj4+Pj4+Pj4+Pj4+Pj4" type="audio/wav">
+  </audio>
+
+  <script>
+  // ==========================
+  // EchoPulse — HTML5 Canvas
+  // Mecânica: paredes invisíveis, visíveis apenas sob "onda de eco" que decai com o tempo.
+  // ==========================
+  (() => {
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const uiLevel = document.getElementById('uiLevel');
+    const uiTime = document.getElementById('uiTime');
+    const uiPulses = document.getElementById('uiPulses');
+    const uiBest = document.getElementById('uiBest');
+    const startPrompt = document.getElementById('startPrompt');
+    const barPulse = document.getElementById('barPulse');
+    const barFade = document.getElementById('barFade');
+    const txtPulse = document.getElementById('txtPulse');
+    const txtFade = document.getElementById('txtFade');
+    const chipMsg = document.getElementById('chipMsg');
+    const reduceMotion = document.getElementById('reduceMotion');
+    const toggleSound = document.getElementById('toggleSound');
+    const pingSfx = document.getElementById('pingSfx');
+    const btnRestart = document.getElementById('btnRestart');
+
+    // Ajuste de canvas responsivo
+    function fitCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      // preservar aspecto 16:10 aproximado
+      canvas.width = Math.floor(rect.width * devicePixelRatio);
+      canvas.height = Math.floor(rect.height * devicePixelRatio);
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    }
+    window.addEventListener('resize', fitCanvas);
+
+    // RNG simples
+    let seed = Math.floor(Math.random()*1e9);
+    function rand() { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed>>>0)/4294967296; }
+
+    // Geração de labirinto (backtracker em grade)
+    const GRID = { cols: 31, rows: 19, cell: 28, wall: 6 };
+    function generateMaze(cols, rows) {
+      const W = cols|0, H = rows|0;
+      const grid = Array.from({length: H}, () => Array(W).fill(1)); // 1=parede, 0=chão
+      const stack = [];
+      const inb = (x,y)=>x>0&&y>0&&x<W-1&&y<H-1;
+      function carve(x,y){ grid[y][x]=0; stack.push([x,y]); }
+      carve(1,1);
+      while(stack.length){
+        const [x,y] = stack[stack.length-1];
+        const dirs = [[2,0],[-2,0],[0,2],[0,-2]].filter(([dx,dy])=> inb(x+dx,y+dy) && grid[y+dy][x+dx]===1);
+        if(dirs.length){
+          const [dx,dy] = dirs[(rand()*dirs.length)|0];
+          grid[y+dy/2][x+dx/2]=0; grid[y+dy][x+dx]=0; stack.push([x+dx,y+dy]);
+        } else stack.pop();
+      }
+      // abrir algumas salas
+      for(let i=0;i<Math.floor(W*H*0.04);i++){
+        const x=(rand()*W)|0, y=(rand()*H)|0; grid[y][x]=0;
+      }
+      return grid;
+    }
+
+    // Estado do jogo
+    let level=1, pulsesUsed=0, tStart=0, elapsed=0, running=false;
+    let grid, start, goal, player, visRings=[];
+    let pulseEnergy=1, pulseCooldown=0; // 0..1
+
+    const bestKey = 'echopulse_best_v1';
+    const best = JSON.parse(localStorage.getItem(bestKey)||'{}');
+
+    function resetLevel(newLayout=true){
+      if(newLayout){ grid = generateMaze(GRID.cols, GRID.rows); placeStartGoal(); }
+      player = {...start};
+      pulsesUsed=0; elapsed=0; tStart=performance.now(); running=false; visRings.length=0;
+      pulseEnergy=1; pulseCooldown=0; startPrompt.style.display='block';
+      uiLevel.textContent = level; uiPulses.textContent = pulsesUsed; uiTime.textContent = '0.0s';
+      showMsg('Novo layout pronto');
+      fitCanvas(); draw();
+    }
+
+    function placeStartGoal(){
+      const freeCells=[]; for(let y=0;y<grid.length;y++) for(let x=0;x<grid[0].length;x++) if(grid[y][x]===0) freeCells.push([x,y]);
+      start = toWorld(...freeCells[0]); // canto superior
+      goal = toWorld(...freeCells[freeCells.length-1]); // canto oposto
+    }
+
+    function toWorld(cx,cy){ return { x: (cx+0.5)*GRID.cell + 40, y: (cy+0.5)*GRID.cell + 40 } }
+    function toCell(px,py){ return { cx: Math.floor((px-40)/GRID.cell), cy: Math.floor((py-40)/GRID.cell) } }
+
+    // Colisão simples AABB com paredes
+    function isWallAt(px,py){
+      const {cx,cy} = toCell(px,py);
+      if(cy<0||cx<0||cy>=grid.length||cx>=grid[0].length) return true;
+      return grid[cy][cx]===1;
+    }
+
+    const keys = new Set();
+    window.addEventListener('keydown', e=>{ keys.add(e.key.toLowerCase()); if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault(); running=true; startPrompt.style.display='none'; });
+    window.addEventListener('keyup', e=> keys.delete(e.key.toLowerCase()));
+
+    // Controles de toque/arraste
+    let pointer = null;
+    canvas.addEventListener('pointerdown', e=>{ pointer={id:e.pointerId,x:e.offsetX,y:e.offsetY,drag:false}; running=true; startPrompt.style.display='none'; echoPulse(e.offsetX,e.offsetY); });
+    canvas.addEventListener('pointermove', e=>{ if(pointer && e.pointerId===pointer.id){ pointer.drag=true; pointer.x=e.offsetX; pointer.y=e.offsetY; }});
+    window.addEventListener('pointerup', e=>{ if(pointer && e.pointerId===pointer.id) pointer=null; });
+    canvas.addEventListener('click', e=>{ echoPulse(e.offsetX,e.offsetY); });
+
+    btnRestart.addEventListener('click', ()=> resetLevel(true));
+
+    toggleSound.addEventListener('change', ()=>{});
+
+    function echoPulse(x,y){
+      if(pulseEnergy < 0.2) { showMsg('Sem energia… aguarde recarga'); return; }
+      pulsesUsed++; uiPulses.textContent = pulsesUsed;
+      visRings.push({ x, y, r: 0, strength: 1 });
+      pulseEnergy = Math.max(0, pulseEnergy - 0.34);
+      pulseCooldown = 1;
+      if(toggleSound.checked){ try{ pingSfx.currentTime=0; pingSfx.play(); }catch(_){} }
+    }
+
+    function showMsg(text){
+      chipMsg.textContent = text; chipMsg.style.display='block';
+      clearTimeout(showMsg._t);
+      showMsg._t = setTimeout(()=> chipMsg.style.display='none', 1400);
+    }
+
+    // Loop
+    let last=performance.now();
+    function tick(now){
+      const dt = Math.min(0.033, (now-last)/1000); last = now;
+      if(running) elapsed = (now - tStart)/1000;
+
+      // Recarregar energia e decaimento do efeito de visibilidade
+      pulseEnergy = Math.min(1, pulseEnergy + dt*0.22);
+      if(pulseCooldown>0) pulseCooldown = Math.max(0, pulseCooldown - dt*0.5);
+
+      update(dt);
+      draw();
+      requestAnimationFrame(tick);
+    }
+
+    function update(dt){
+      // movimento
+      const speed = 160 * (reduceMotion.checked ? 1.1 : 1);
+      let vx=0, vy=0;
+      if(keys.has('w')||keys.has('arrowup')) vy -= 1;
+      if(keys.has('s')||keys.has('arrowdown')) vy += 1;
+      if(keys.has('a')||keys.has('arrowleft')) vx -= 1;
+      if(keys.has('d')||keys.has('arrowright')) vx += 1;
+      if(pointer && pointer.drag){ // arraste direciona
+        const dx = pointer.x - player.x; const dy = pointer.y - player.y; const m = Math.hypot(dx,dy)||1; vx = dx/m; vy = dy/m;
+      }
+      const mag = Math.hypot(vx,vy)||1; vx/=mag; vy/=mag;
+      const step = speed*dt;
+      // tentativa eixo X
+      if(!isWallAt(player.x + vx*step, player.y)) player.x += vx*step; else if(vx) pulseHint();
+      // eixo Y
+      if(!isWallAt(player.x, player.y + vy*step)) player.y += vy*step; else if(vy) pulseHint();
+
+      // Atualiza anéis de eco
+      for(const ring of visRings){
+        ring.r += (reduceMotion.checked? 220: 320)*dt; // raio cresce
+        ring.strength -= dt * 0.28; // decaimento
+      }
+      visRings = visRings.filter(r=> r.strength>0);
+
+      // UI barras
+      barPulse.style.width = (pulseEnergy*100).toFixed(0)+'%';
+      txtPulse.textContent = (pulseEnergy*100).toFixed(0)+'%';
+      const fadeAvg = visRings.reduce((a,b)=>a+b.strength,0)/Math.max(1,visRings.length);
+      barFade.style.width = (Math.min(1, fadeAvg)*100).toFixed(0)+'%';
+      txtFade.textContent = (Math.min(1, fadeAvg)*100).toFixed(0)+'%';
+
+      // vitória
+      if(Math.hypot(player.x-goal.x, player.y-goal.y) < GRID.cell*0.4){
+        onWin();
+      }
+
+      uiTime.textContent = elapsed.toFixed(1)+'s';
+    }
+
+    function pulseHint(){
+      if(pulseCooldown===0) showMsg('Bata um pulso para ver!');
+    }
+
+    function onWin(){
+      const key = 'L'+level;
+      const score = { t: +elapsed.toFixed(2), p: pulsesUsed };
+      if(!best[key] || score.t < best[key].t || (score.t===best[key].t && score.p < best[key].p)) best[key]=score;
+      localStorage.setItem(bestKey, JSON.stringify(best));
+      uiBest.textContent = best[key]? `${best[key].t}s / ${best[key].p}p` : '—';
+
+      level++;
+      uiLevel.textContent = level;
+      showWinPrompt();
+      // novo layout para o próximo nível
+      grid = generateMaze(GRID.cols + (level%2?0:2), GRID.rows + (level%2?0:2));
+      placeStartGoal();
+      player = {...start};
+      pulsesUsed=0; elapsed=0; tStart=performance.now(); visRings.length=0; running=false; startPrompt.style.display='block';
+    }
+
+    function showWinPrompt(){
+      const el = document.createElement('div');
+      el.className='centerPrompt';
+      el.innerHTML = `<h2>✔ Nível concluído!</h2>
+        <p>Tempo: <strong>${elapsed.toFixed(2)}s</strong> · Pulsos: <strong>${pulsesUsed}</strong></p>
+        <p>Prepare-se: o próximo labirinto será maior.</p>`;
+      canvas.parentElement.querySelector('.hud').appendChild(el);
+      setTimeout(()=> el.remove(), 1600);
+    }
+
+    function draw(){
+      const w = canvas.clientWidth, h = canvas.clientHeight; ctx.clearRect(0,0,w,h);
+      // fundo sutil
+      const g = ctx.createRadialGradient(player.x, player.y, 20, player.x, player.y, Math.max(w,h));
+      g.addColorStop(0,'#0a0f16'); g.addColorStop(1,'#05070a');
+      ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+      // borda do mundo
+      const ox=40, oy=40; const W=GRID.cols*GRID.cell, H=GRID.rows*GRID.cell;
+      ctx.strokeStyle = 'rgba(122,224,255,.12)'; ctx.lineWidth=2; ctx.strokeRect(ox,oy,W,H);
+
+      // desenhar paredes com base nos anéis de visibilidade
+      function visibilityAt(x,y){
+        let v=0; for(const ring of visRings){ const d=Math.hypot(x-ring.x,y-ring.y); const edge=Math.max(0, 1 - Math.abs(d-ring.r)/60); v = Math.max(v, edge*ring.strength); } return v;
+      }
+
+      // paredes (como células)
+      for(let y=0;y<grid.length;y++){
+        for(let x=0;x<grid[0].length;x++){
+          if(grid[y][x]===1){
+            const cx = ox + x*GRID.cell, cy = oy + y*GRID.cell;
+            // amostra visibilidade no centro
+            const v = visibilityAt(cx+GRID.cell/2, cy+GRID.cell/2);
+            if(v>0.02){
+              ctx.fillStyle = `rgba(122,224,255,${0.12 + v*0.55})`;
+              ctx.fillRect(cx+2, cy+2, GRID.cell-4, GRID.cell-4);
+              // textura
+              ctx.strokeStyle = `rgba(180,235,255,${0.06 + v*0.2})`;
+              ctx.strokeRect(cx+2.5, cy+2.5, GRID.cell-5, GRID.cell-5);
+            }
+          }
+        }
+      }
+
+      // meta (portal)
+      const gv = visibilityAt(goal.x, goal.y);
+      if(gv>0){
+        ctx.beginPath();
+        ctx.arc(goal.x, goal.y, 8+gv*12, 0, Math.PI*2);
+        ctx.strokeStyle = `rgba(140,255,181,${0.4+gv*0.5})`;
+        ctx.lineWidth=3; ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(goal.x, goal.y-12-gv*6); ctx.lineTo(goal.x-8, goal.y+6); ctx.lineTo(goal.x+8, goal.y+6); ctx.closePath();
+        ctx.fillStyle = `rgba(140,255,181,${0.3+gv*0.6})`; ctx.fill();
+      }
+
+      // jogador
+      ctx.beginPath(); ctx.arc(player.x, player.y, 7, 0, Math.PI*2);
+      ctx.fillStyle = '#e8f1ff'; ctx.fill();
+      ctx.strokeStyle = 'rgba(122,224,255,.5)'; ctx.lineWidth=2; ctx.stroke();
+
+      // ondas visuais dos pulsos
+      for(const ring of visRings){
+        if(ring.strength<=0) continue;
+        ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI*2);
+        ctx.strokeStyle = `rgba(122,224,255,${0.25*ring.strength})`; ctx.lineWidth = 2; ctx.stroke();
+        if(!reduceMotion.checked){
+          const dash = 14; ctx.setLineDash([dash, dash]); ctx.lineDashOffset = (performance.now()/40)% (dash*2);
+          ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r*0.7, 0, Math.PI*2);
+          ctx.strokeStyle = `rgba(140,255,181,${0.12*ring.strength})`; ctx.lineWidth = 2; ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+
+    // inicialização
+    fitCanvas();
+    grid = generateMaze(GRID.cols, GRID.rows);
+    placeStartGoal();
+    player = {...start};
+    requestAnimationFrame(tick);
+    resetLevel(false);
+
+    // exibir recorde do nível atual (se houver)
+    (function refreshBest(){
+      const key='L'+level; uiBest.textContent = best[key]? `${best[key].t}s / ${best[key].p}p` : '—';
+    })();
+
+  })();
+  </script>
+</body>
+</html>
